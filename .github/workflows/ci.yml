@@ -1,4 +1,4 @@
-name: tests
+name: CI
 
 on:
   push:
@@ -7,23 +7,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  core:
-    name: 鏍稿績閫昏緫娴嬭瘯 (node)
+  node-tests:
+    name: core logic tests (node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
+      - name: run core tests
+        run: node tests/core.test.js
 
-      - name: 璺戞祴璇?        run: node tests/core.test.js
-
-  syntax:
-    name: 鍓嶇鑴氭湰璇硶妫€鏌?    runs-on: ubuntu-latest
+  js-syntax:
+    name: js syntax check
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: node --check
@@ -33,12 +33,12 @@ jobs:
             node --check "$f"
           done
 
-  python:
-    name: 鍔╂墜鑴氭湰璇硶妫€鏌?(python)
+  python-syntax:
+    name: python syntax check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: compileall
