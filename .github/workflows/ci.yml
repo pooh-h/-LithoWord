@@ -1,4 +1,4 @@
-name: tests
+﻿name: tests
 
 on:
   push:
@@ -8,26 +8,24 @@ on:
 
 jobs:
   core:
-    name: 核心逻辑测试 (node)
+    name: 鏍稿績閫昏緫娴嬭瘯 (node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
-      - name: 跑测试
-        run: node tests/core.test.js
+      - name: 璺戞祴璇?        run: node tests/core.test.js
 
   syntax:
-    name: 前端脚本语法检查
-    runs-on: ubuntu-latest
+    name: 鍓嶇鑴氭湰璇硶妫€鏌?    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: node --check
         run: |
           for f in assets/*.js tests/*.js; do
@@ -36,10 +34,10 @@ jobs:
           done
 
   python:
-    name: 助手脚本语法检查 (python)
+    name: 鍔╂墜鑴氭湰璇硶妫€鏌?(python)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
