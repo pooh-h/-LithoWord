@@ -1,0 +1,15 @@
+# 统一换行，避免 Windows / Linux 互相改文件
+* text=auto
+
+# 批处理和 PowerShell 脚本用 CRLF（Windows 上双击运行最稳）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制
+*.ico binary
+*.png binary
+*.jpg binary
+*.zip binary
+*.sqlite binary
+*.exe binary

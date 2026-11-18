@@ -1,0 +1,16 @@
+# 运行时生成的文件，不进仓库
+data/dict.sqlite
+data/cache/
+tools/agent.pid
+tools/agent.log
+
+# Python / 编辑器
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 系统文件
+desktop.ini

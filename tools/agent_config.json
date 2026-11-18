@@ -1,0 +1,9 @@
+{
+  "port": 8737,
+  "hotkey": "doubleTab",
+  "doubleTabMs": 420,
+  "maxInbox": 30,
+  "openBrowser": true,
+  "appTitleMatch": ["LithoWord", "岩语"],
+  "_说明": "hotkey 可选 doubleTab / ctrlTab / singleTab；改完重启取词助手。singleTab 会拦截系统 Tab，慎用。"
+}
