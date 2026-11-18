@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: 核心逻辑测试 (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 跑测试
+        run: node tests/core.test.js
+
+  syntax:
+    name: 前端脚本语法检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: node --check
+        run: |
+          for f in assets/*.js tests/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+  python:
+    name: 助手脚本语法检查 (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: compileall
+        run: python -m compileall -q tools
