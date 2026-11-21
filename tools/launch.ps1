@@ -48,6 +48,16 @@ function Get-Heartbeat([int]$p) {
 }
 
 function Open-Site([int]$p) {
+  # 已经有一个岩语的标签页就把它拿到前面来，不再叠一个新标签
+  try {
+    $sh = New-Object -ComObject WScript.Shell
+    foreach ($t in @("岩语 · LithoWord", "LithoWord - Microsoft", "127.0.0.1:$p")) {
+      if ($sh.AppActivate($t)) {
+        Write-Log "复用已经打开的网页窗口"
+        return
+      }
+    }
+  } catch { }
   Start-Process ("http://127.0.0.1:{0}/" -f $p) | Out-Null
 }
 

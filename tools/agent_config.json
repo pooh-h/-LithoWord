@@ -1,9 +1,14 @@
 {
   "port": 8737,
-  "hotkey": "doubleTab",
+  "hotkey": "ctrl+alt+w",
   "doubleTabMs": 420,
   "maxInbox": 30,
   "openBrowser": true,
-  "appTitleMatch": ["LithoWord", "岩语"],
-  "_说明": "hotkey 可选 doubleTab / ctrlTab / singleTab；改完重启取词助手。singleTab 会拦截系统 Tab，慎用。"
+  "exitWhenPageCloses": true,
+  "pageIdleSeconds": 90,
+  "appTitleMatch": [
+    "LithoWord",
+    "岩语"
+  ],
+  "_说明": "hotkey 可写 doubleTab / tripleTab / ctrlTab / singleTab，也可以写任意组合键如 ctrl+alt+w、ctrl+shift+space、alt+`。exitWhenPageCloses=true 时，网页关掉 pageIdleSeconds 秒后助手自动退出。改这两项可以直接在网页「设置」里点，会立刻生效并写回本文件。"
 }

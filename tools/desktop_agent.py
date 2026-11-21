@@ -36,7 +36,7 @@ APP_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = Path(__file__).resolve().parent / "agent_config.json"
 PID_PATH = Path(__file__).resolve().parent / "agent.pid"
 LOG_PATH = Path(__file__).resolve().parent / "agent.log"
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # 离线词典（ECDICT，由 tools/dict_build.py 生成）
 DICT_DB = APP_DIR / "data" / "dict.sqlite"
@@ -47,12 +47,85 @@ _build_proc = None
 
 DEFAULTS = {
     "port": 8737,
-    "hotkey": "doubleTab",      # doubleTab | ctrlTab | singleTab
+    # 取词快捷键：doubleTab / tripleTab / ctrlTab / singleTab，
+    # 或任意组合键，写法如 "ctrl+alt+w"、"ctrl+shift+space"、"alt+`"
+    "hotkey": "doubleTab",
     "doubleTabMs": 420,
     "maxInbox": 30,
     "openBrowser": True,
+    # 网页关掉后助手自动退出（免得打游戏时误触弹出收录窗口）
+    "exitWhenPageCloses": True,
+    "pageIdleSeconds": 90,
     "appTitleMatch": ["LithoWord", "岩语"],
 }
+
+HOTKEY_PRESETS = [
+    {"value": "doubleTab", "label": "连按两次 Tab", "note": "默认。单次 Tab 仍正常切换焦点"},
+    {"value": "ctrlTab", "label": "Ctrl + Tab", "note": "不冲突单 Tab，但会和浏览器切标签同拍"},
+    {"value": "ctrl+alt+w", "label": "Ctrl + Alt + W", "note": "组合键不占单键，打游戏不会误触"},
+    {"value": "ctrl+alt+q", "label": "Ctrl + Alt + Q", "note": "组合键"},
+    {"value": "ctrl+alt+z", "label": "Ctrl + Alt + Z", "note": "组合键"},
+    {"value": "ctrl+alt+x", "label": "Ctrl + Alt + X", "note": "组合键"},
+    {"value": "ctrl+shift+space", "label": "Ctrl + Shift + Space", "note": "组合键"},
+    {"value": "ctrl+`", "label": "Ctrl + `", "note": "左上角反引号"},
+    {"value": "alt+`", "label": "Alt + `", "note": "左上角反引号"},
+    {"value": "ctrl+alt+e", "label": "Ctrl + Alt + E", "note": "组合键"},
+]
+
+# 键名 → 虚拟键码
+VK_TABLE = {
+    "tab": 0x09, "enter": 0x0D, "return": 0x0D, "space": 0x20, "esc": 0x1B, "escape": 0x1B,
+    "backspace": 0x08, "delete": 0x2E, "del": 0x2E, "insert": 0x2D, "ins": 0x2D,
+    "home": 0x24, "end": 0x23, "pgup": 0x21, "pageup": 0x21, "pgdn": 0x22, "pagedown": 0x22,
+    "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28,
+    "`": 0xC0, "grave": 0xC0, "-": 0xBD, "=": 0xBB, "[": 0xDB, "]": 0xDD, "\\": 0xDC,
+    ";": 0xBA, "'": 0xDE, ",": 0xBC, ".": 0xBE, "/": 0xBF,
+}
+for _i in range(10):
+    VK_TABLE[str(_i)] = 0x30 + _i
+for _c in "abcdefghijklmnopqrstuvwxyz":
+    VK_TABLE[_c] = ord(_c.upper())
+for _n in range(1, 13):
+    VK_TABLE["f%d" % _n] = 0x6F + _n
+
+MOD_ALIAS = {
+    "ctrl": "ctrl", "control": "ctrl", "alt": "alt", "menu": "alt",
+    "shift": "shift", "win": "win", "meta": "win", "super": "win", "cmd": "win",
+}
+
+
+def parse_combo(spec):
+    """把 "ctrl+alt+w" / "doubleTab" 解析成 {mods, vk, double, triple}；不认识返回 None。"""
+    raw = str(spec or "").strip()
+    if not raw:
+        return None
+    key = raw.lower().replace(" ", "")
+    if key in ("doubletab", "tabx2"):
+        return {"mods": frozenset(), "vk": VK_TABLE["tab"], "double": True, "triple": False, "label": "连按两次 Tab"}
+    if key in ("tripletab", "tabx3"):
+        return {"mods": frozenset(), "vk": VK_TABLE["tab"], "double": False, "triple": True, "label": "连按三次 Tab"}
+    if key == "singletab":
+        return {"mods": frozenset(), "vk": VK_TABLE["tab"], "double": False, "triple": False, "label": "单次 Tab"}
+    if key in ("ctrltab", "alt+tab"):
+        return {"mods": frozenset(["ctrl"]), "vk": VK_TABLE["tab"], "double": False, "triple": False, "label": "Ctrl + Tab"}
+    parts = [p for p in key.split("+") if p]
+    if not parts:
+        return None
+    mods = set()
+    main = None
+    for p in parts:
+        if p in MOD_ALIAS:
+            mods.add(MOD_ALIAS[p])
+        else:
+            main = p
+    if main is None or main not in VK_TABLE:
+        return None
+    if main == "tab" and not mods:
+        # 裸 Tab 必须明确选 singleTab，避免这里被误解成"轻点一次就弹窗"
+        return None
+    label = " + ".join([m.capitalize() for m in ("ctrl", "alt", "shift", "win") if m in mods] + [main.upper() if len(main) == 1 else main.capitalize()])
+    return {"mods": frozenset(mods), "vk": VK_TABLE[main], "double": False, "triple": False, "label": label}
+
 
 
 def load_config():
@@ -63,6 +136,58 @@ def load_config():
     except Exception:
         log("配置文件读取失败，使用默认值", traceback.format_exc())
     return cfg
+
+
+def write_config():
+    """把当前可改项写回 agent_config.json（保留其余键）。"""
+    data = dict(CFG)
+    data["hotkey"] = HOTKEY_RAW
+    data["exitWhenPageCloses"] = EXIT_ON_PAGE_CLOSE
+    data["pageIdleSeconds"] = PAGE_IDLE
+    data.pop("_说明", None)
+    data["_说明"] = ("hotkey 可写 doubleTab / tripleTab / ctrlTab / singleTab，"
+                 "也可以写任意组合键如 ctrl+alt+w、ctrl+shift+space、alt+`。"
+                 "exitWhenPageCloses=true 时，网页关掉 pageIdleSeconds 秒后助手自动退出。"
+                 "改这两项可以直接在网页「设置」里点，会立刻生效并写回本文件。")
+    try:
+        CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        log("配置写入失败", traceback.format_exc())
+        return False
+
+
+def apply_config(patch):
+    """热更新 hotkey / exitWhenPageCloses / pageIdleSeconds。返回 (ok, message)。"""
+    global HOTKEY_RAW, COMBO, COMBO_LABEL, HOTKEY, EXIT_ON_PAGE_CLOSE, PAGE_IDLE
+    changed = []
+    if "hotkey" in patch:
+        spec = str(patch.get("hotkey") or "").strip()
+        combo = parse_combo(spec)
+        if not combo:
+            return False, "认不出这个快捷键：%s（试试 ctrl+alt+w、ctrl+shift+space、doubleTab）" % spec
+        HOTKEY_RAW = spec
+        HOTKEY = spec
+        COMBO = combo
+        COMBO_LABEL = combo["label"]
+        CFG["hotkey"] = spec
+        changed.append("快捷键 → %s" % COMBO_LABEL)
+    if "exitWhenPageCloses" in patch:
+        EXIT_ON_PAGE_CLOSE = bool(patch.get("exitWhenPageCloses"))
+        CFG["exitWhenPageCloses"] = EXIT_ON_PAGE_CLOSE
+        changed.append("关网页退出 → %s" % ("开" if EXIT_ON_PAGE_CLOSE else "关"))
+    if "pageIdleSeconds" in patch:
+        try:
+            PAGE_IDLE = max(15, min(600, int(patch.get("pageIdleSeconds"))))
+            CFG["pageIdleSeconds"] = PAGE_IDLE
+            changed.append("空闲上限 → %s 秒" % PAGE_IDLE)
+        except Exception:
+            pass
+    if not changed:
+        return False, "没有可更新的字段"
+    write_config()
+    log("配置已更新：" + "；".join(changed))
+    return True, "；".join(changed)
 
 
 def log(msg, detail=""):
@@ -86,6 +211,18 @@ HOTKEY = str(CFG.get("hotkey") or "doubleTab")
 DOUBLE_MS = int(CFG.get("doubleTabMs") or 420)
 MAX_INBOX = int(CFG.get("maxInbox") or 30)
 TITLE_MATCH = [t for t in (CFG.get("appTitleMatch") or DEFAULTS["appTitleMatch"]) if t]
+
+# 快捷键与「关网页就退出」
+HOTKEY_RAW = HOTKEY
+COMBO = parse_combo(HOTKEY) or parse_combo("doubleTab")
+COMBO_LABEL = COMBO["label"]
+EXIT_ON_PAGE_CLOSE = bool(CFG.get("exitWhenPageCloses", True))
+PAGE_IDLE = max(15, int(CFG.get("pageIdleSeconds") or 90))
+PAGE_LAST = 0.0          # 网页最后一次心跳
+PAGE_SEEN = False        # 是否见过网页（见过之后才开始看门狗）
+BYE_PENDING = False      # 是否收到过「网页正在关闭」
+BYE_GRACE = 25           # 收到 pagehide 后留多久（够别的标签页发下一次心跳，也不至于等太久）
+
 
 INBOX = deque(maxlen=MAX_INBOX)
 INBOX_LOCK = threading.Lock()
@@ -500,7 +637,7 @@ class Handler(SimpleHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Cache-Control", "no-store")
 
     def _json(self, payload, code=200):
@@ -515,6 +652,33 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception:
+            body = {}
+        if path == "/api/page/bye":
+            global PAGE_LAST, BYE_PENDING
+            if PAGE_SEEN and not BYE_PENDING:
+                BYE_PENDING = True
+                # 给刷新留出几秒：网页重新 ping 会把 PAGE_LAST 顶回去并取消
+                PAGE_LAST = time.time() - PAGE_IDLE + BYE_GRACE
+                log("网页正在关闭，%d 秒内没有新心跳就退出助手" % BYE_GRACE)
+            self._json({"ok": True})
+            return
+        if path == "/api/config":
+            ok, msg = apply_config(body)
+            self._json({"ok": ok, "message": msg, "hotkey": HOTKEY_RAW,
+                        "hotkeyLabel": COMBO_LABEL, "exitWhenPageCloses": EXIT_ON_PAGE_CLOSE,
+                        "pageIdleSeconds": PAGE_IDLE, "presets": HOTKEY_PRESETS},
+                       code=200 if ok else 400)
+            return
+        self._json({"ok": False, "error": "unknown endpoint"}, code=404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -523,9 +687,28 @@ class Handler(SimpleHTTPRequestHandler):
             LAST_HEARTBEAT = time.time()
             self._json({
                 "ok": True, "app": "LithoWord desktop agent", "version": VERSION,
-                "hotkey": HOTKEY, "doubleTabMs": DOUBLE_MS, "port": PORT,
-                "pid": os.getpid(), "uptime": round(time.time() - STARTED_AT, 1),
-                "inbox": len(INBOX),
+                "hotkey": HOTKEY_RAW, "hotkeyLabel": COMBO_LABEL, "doubleTabMs": DOUBLE_MS,
+                "port": PORT, "pid": os.getpid(), "uptime": round(time.time() - STARTED_AT, 1),
+                "inbox": len(INBOX), "exitWhenPageCloses": EXIT_ON_PAGE_CLOSE,
+                "pageIdleSeconds": PAGE_IDLE, "presets": HOTKEY_PRESETS,
+            })
+            return
+        if path == "/api/page/ping":
+            global PAGE_LAST, PAGE_SEEN, BYE_PENDING
+            PAGE_LAST = time.time()
+            if BYE_PENDING:
+                BYE_PENDING = False
+                log("网页回来了（刷新或别的标签仍在），取消退出")
+            if not PAGE_SEEN:
+                PAGE_SEEN = True
+                log("网页已连上，开始看守：%d 秒没有心跳就退出" % PAGE_IDLE if EXIT_ON_PAGE_CLOSE else "网页已连上")
+            self._json({"ok": True, "exitWhenPageCloses": EXIT_ON_PAGE_CLOSE, "pageIdleSeconds": PAGE_IDLE})
+            return
+        if path == "/api/config":
+            self._json({
+                "ok": True, "hotkey": HOTKEY_RAW, "hotkeyLabel": COMBO_LABEL,
+                "exitWhenPageCloses": EXIT_ON_PAGE_CLOSE, "pageIdleSeconds": PAGE_IDLE,
+                "presets": HOTKEY_PRESETS,
             })
             return
         if path == "/api/inbox":
@@ -581,7 +764,26 @@ def serve():
 # 全局键盘钩子
 # ---------------------------------------------------------------------------
 _last_tab = 0.0
+_tab_hits = []
 _hook_ref = None
+
+
+def _mods_down():
+    """当前按住的修饰键集合。"""
+    out = set()
+    try:
+        if user32.GetAsyncKeyState(0x11) & 0x8000:
+            out.add("ctrl")
+        if user32.GetAsyncKeyState(0x12) & 0x8000:
+            out.add("alt")
+        if user32.GetAsyncKeyState(0x10) & 0x8000:
+            out.add("shift")
+        if (user32.GetAsyncKeyState(0x5B) & 0x8000) or (user32.GetAsyncKeyState(0x5C) & 0x8000):
+            out.add("win")
+    except Exception:
+        pass
+    return out
+
 
 
 def trigger_capture(reason):
@@ -621,29 +823,35 @@ def install_hook():
     HookProc = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, WPARAM, LPARAM)
 
     def _proc(n_code, w_param, l_param):
-        global _last_tab
+        global _last_tab, _tab_hits
         try:
             if n_code == 0 and w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 ks = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                if ks.vkCode == VK_TAB:
-                    now = time.monotonic()
+                # 忽略自己注入的按键（取词时会发 Ctrl+C），避免自触发
+                if ks.flags & LLKHF_INJECTED and not os.environ.get("LITHO_ALLOW_INJECTED"):
+                    return user32.CallNextHookEx(None, n_code, w_param, l_param)
+                combo = COMBO
+                if ks.vkCode == combo["vk"]:
+                    mods = _mods_down()
                     if os.environ.get("LITHO_DEBUG_KEYS"):
-                        log("TAB 事件 flags=%d 间隔=%.3fs" % (ks.flags, now - _last_tab))
-                    ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
-                    alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                    if HOTKEY == "singleTab" and not ctrl and not alt:
-                        trigger_capture("singleTab")
-                        return 1
-                    if HOTKEY == "ctrlTab" and ctrl and not alt:
-                        trigger_capture("ctrlTab")
-                        return 1
-                    if HOTKEY == "doubleTab" and not ctrl and not alt:
-                        if now - _last_tab <= DOUBLE_MS / 1000.0:
-                            _last_tab = 0.0
-                            trigger_capture("doubleTab")
+                        log("按键 vk=%d mods=%s 期望=%s" % (ks.vkCode, sorted(mods), sorted(combo["mods"])))
+                    if mods == set(combo["mods"]):
+                        now = time.monotonic()
+                        if combo["double"]:
+                            if now - _last_tab <= DOUBLE_MS / 1000.0:
+                                _last_tab = 0.0
+                                trigger_capture("双击 Tab")
+                            else:
+                                _last_tab = now
                             # 不拦截 Tab：单 Tab 继续做它原本的事
+                        elif combo["triple"]:
+                            _tab_hits = [t for t in _tab_hits if now - t <= (DOUBLE_MS / 1000.0) * 1.6] + [now]
+                            if len(_tab_hits) >= 3:
+                                _tab_hits = []
+                                trigger_capture("三击 Tab")
                         else:
-                            _last_tab = now
+                            trigger_capture(combo["label"])
+                            return 1
         except Exception:
             pass
         try:
@@ -658,7 +866,7 @@ def install_hook():
     if not hook:
         log("键盘钩子安装失败（错误码 %d），仍可使用网页与接口" % ctypes.get_last_error())
         return False
-    log("全局键盘监听已开启：%s（连按两次 Tab 取词）" % ("双击 Tab" if HOTKEY == "doubleTab" else HOTKEY))
+    log("全局键盘监听已开启：%s" % COMBO_LABEL)
     return True
 
 
@@ -680,6 +888,24 @@ def cleanup():
         pass
 
 
+def page_watchdog():
+    """网页关掉之后自动退出，免得后台热键一直挂在那儿。"""
+    while True:
+        time.sleep(1.0)
+        try:
+            if not PAGE_SEEN or not EXIT_ON_PAGE_CLOSE:
+                continue
+            idle = time.time() - PAGE_LAST
+            if idle > PAGE_IDLE:
+                why = ("网页已关闭，助手退出" if BYE_PENDING
+                       else "网页已经 %d 秒没有心跳，助手退出" % int(idle))
+                log(why + "（想常驻就把 agent_config.json 里 exitWhenPageCloses 设为 false）")
+                cleanup()
+                os._exit(0)
+        except Exception:
+            pass
+
+
 def main():
     if os.name == "nt":
         try:
@@ -697,6 +923,7 @@ def main():
         focus_app() or webbrowser.open("http://127.0.0.1:%d/" % PORT)
         return 0
 
+    threading.Thread(target=page_watchdog, name="page-watch", daemon=True).start()
     hooked = install_hook()
     if hooked:
         try:

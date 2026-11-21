@@ -137,6 +137,30 @@
   let elCat = "all";     // 元素类别筛选
   let elRank = "all";    // 常见度筛选：all / A / B / mine
   let agentOnline = false;
+  /* 助手侧的真实配置（以助手为准，网页只负责改它） */
+  let agentCfg = { hotkey: "", hotkeyLabel: "", exitWhenPageCloses: null, pageIdleSeconds: 90 };
+  const HOTKEY_PRESETS = [
+    { value: "doubleTab", label: "连按两次 Tab", note: "默认，单 Tab 照常切焦点" },
+    { value: "ctrlTab", label: "Ctrl + Tab", note: "和浏览器切标签同一个拍子" },
+    { value: "ctrl+alt+w", label: "Ctrl + Alt + W", note: "组合键，打游戏不会误触" },
+    { value: "ctrl+alt+q", label: "Ctrl + Alt + Q", note: "组合键" },
+    { value: "ctrl+alt+z", label: "Ctrl + Alt + Z", note: "组合键" },
+    { value: "ctrl+alt+x", label: "Ctrl + Alt + X", note: "组合键" },
+    { value: "ctrl+alt+e", label: "Ctrl + Alt + E", note: "组合键" },
+    { value: "ctrl+shift+space", label: "Ctrl + Shift + Space", note: "组合键" },
+    { value: "ctrl+`", label: "Ctrl + `", note: "左上角反引号" },
+    { value: "alt+`", label: "Alt + `", note: "左上角反引号" },
+    { value: "tripleTab", label: "连按三次 Tab", note: "更不容易误触" },
+    { value: "singleTab", label: "单次 Tab", note: "会拦掉系统 Tab，最不推荐" }
+  ];
+  function hotkeyOptionsHTML() {
+    const cur = store.settings.hotkey || "doubleTab";
+    const known = HOTKEY_PRESETS.some(function (p) { return p.value === cur; });
+    return HOTKEY_PRESETS.map(function (p) {
+      return '<option value="' + p.value + '"' + (p.value === cur ? " selected" : "") + ">" + esc(p.label) + "　·　" + esc(p.note) + "</option>";
+    }).join("") + (known ? "" : '<option value="' + esc(cur) + '" selected>自定义：' + esc(cur) + "</option>");
+  }
+
   const PT = window.PTABLE || null;
   let lastTabAt = 0;
 
@@ -1437,16 +1461,22 @@
     return '<div class="sec-head" style="margin-top:16px"><h2>台面设置</h2><span class="sec-sub">所有数据只在本机浏览器</span><span class="sec-rule"></span></div>' +
       '<div class="settings">' +
 
-      '<div class="panel"><div class="panel-head"><h3>取词助手</h3><span class="tiny muted">任意窗口 · 连按两次 Tab</span></div><div class="panel-body">' +
+      '<div class="panel"><div class="panel-head"><h3>取词助手</h3><span class="tiny muted">' + (agentOnline ? esc(agentCfg.hotkeyLabel || "任意窗口") : "任意窗口取词") + "</span></div><div class=\"panel-body\">" +
       '<div class="agent ' + (agentOnline ? "on" : "") + '" id="agentBox" style="margin-bottom:12px"><i class="lamp"></i><div class="txt">' +
-      (agentOnline ? "<b>已连接</b> · 端口 " + store.settings.agentPort + "，正在监听键盘" : "<b>未连接</b> · 不装也能用，装了才能在 Zotero / 播放器里直接取词") + "</div></div>" +
-      '<div class="form-row"><label>快捷键模式</label>' +
-      '<select class="input" id="setHotkey">' +
-      '<option value="doubleTab"' + (store.settings.hotkey === "doubleTab" ? " selected" : "") + ">连按两次 Tab（推荐，不干扰单 Tab 切换）</option>" +
-      '<option value="ctrlTab"' + (store.settings.hotkey === "ctrlTab" ? " selected" : "") + ">Ctrl + Tab</option>" +
-      '<option value="singleTab"' + (store.settings.hotkey === "singleTab" ? " selected" : "") + ">单次 Tab（会拦截系统 Tab，慎用）</option>" +
-      "</select><div class=\"help\">助手会读取 <span class=\"mono\">tools/agent_config.json</span>。改完这里，还要把同样的值写进配置并重启助手。</div></div>" +
-      '<div class="form-row"><label>桌面快捷方式</label><div class="help">双击 <span class="mono">创建桌面快捷方式.bat</span>，会在桌面生成「岩语 LithoWord」。之后双击图标即可：启动本机助手 → 打开网页 → 开始监听 Tab。</div>' +
+      (agentOnline ? "<b>已连接</b> · 端口 " + store.settings.agentPort + "，正在监听键盘 · 当前 " + esc(agentCfg.hotkeyLabel || "—") : "<b>未连接</b> · 不装也能用，装了才能在 Zotero / 播放器里直接取词") + "</div></div>" +
+      '<div class="form-row"><label>快捷键</label>' +
+      '<select class="input" id="setHotkey">' + hotkeyOptionsHTML() + "</select>" +
+      '<div class="help">选一个就生效：会立刻写进 <span class="mono">tools/agent_config.json</span>，不用重启助手。</div></div>' +
+      '<div class="form-row"><label>自定义组合键</label>' +
+      '<div class="hero-actions" style="margin:0"><input class="input" id="setHotkeyCustom" style="flex:1;min-width:180px" placeholder="如 ctrl+alt+y、alt+shift+k" value="' +
+      (HOTKEY_PRESETS.some(function (p) { return p.value === store.settings.hotkey; }) ? "" : esc(store.settings.hotkey)) + '">' +
+      '<button class="btn btn-sm btn-ghost" data-act="hotkey-apply"><svg><use href="#i-check"/></svg>应用</button></div>' +
+      '<div class="help">支持 ctrl / alt / shift / win 加任意字母、数字、F1–F12、space、<span class="mono">`</span>、-、/、[、]。想恢复默认就选上面的「连按两次 Tab」。</div></div>' +
+      '<div class="form-row"><label>关掉网页就退出</label>' +
+      '<label class="switch"><input type="checkbox" id="setExitOnClose"' + (agentCfg.exitWhenPageCloses !== false ? " checked" : "") +
+      "><span>网页一关，助手跟着结束（省得打游戏时热键还挂着）</span></label>" +
+      '<div class="help">默认开。页面上会持续给助手发心跳，关掉标签页或整只浏览器就自动退出；想让它常驻后台就关掉这个开关。</div></div>' +
+      '<div class="form-row"><label>桌面快捷方式</label><div class="help">双击 <span class="mono">创建桌面快捷方式.bat</span>，会在桌面生成「岩语 LithoWord」。之后双击图标即可：启动本机助手 → 打开网页 → 开始监听。</div>' +
       '<div class="hero-actions" style="margin-top:8px"><button class="btn btn-sm btn-ghost" data-act="agent-retry"><svg><use href="#i-link"/></svg>重新连接助手</button>' +
       '<button class="btn btn-sm btn-quiet" data-act="copy" data-text="python tools/desktop_agent.py">复制启动命令</button></div></div>' +
       "</div></div>" +
@@ -1491,7 +1521,7 @@
       "</div></div>" +
 
       '<div class="panel"><div class="panel-head"><h3>快捷键</h3></div><div class="panel-body">' +
-      '<div class="kv"><span>任意窗口取词</span><span>Tab ×2</span></div>' +
+      '<div class="kv"><span>任意窗口取词</span><span>' + esc(agentCfg.hotkeyLabel || "连按两次 Tab") + "</span></div>" +
       '<div class="kv"><span>应用内取词</span><span>Tab ×2 / C</span></div>' +
       '<div class="kv"><span>显示答案</span><span>Space</span></div>' +
       '<div class="kv"><span>评分</span><span>1 忘记 · 2 模糊 · 3 记得 · 4 很简单</span></div>' +
@@ -1690,7 +1720,7 @@
       return '<option value="' + s.id + '"' + (p.sourceId === s.id ? " selected" : "") + ">" + esc(shortTitle(s)) + "</option>";
     }).join("");
     openModal(
-      '<div class="modal-head"><h2>收录一个词</h2><span class="chip gold" style="margin-left:auto">TAB ×2</span></div>' +
+      '<div class="modal-head"><h2>收录一个词</h2><span class="chip gold" style="margin-left:auto">' + esc(agentCfg.hotkeyLabel || "连按两次 Tab") + "</span></div>" +
       '<p class="modal-sub">词形会被自动还原并归并；填上原句和页码，复习时可以回跳 Zotero 原文。</p>' +
       '<form id="capForm" autocomplete="off">' +
       '<div class="form-row"><label for="capTerm">单词或短语</label>' +
@@ -1925,18 +1955,75 @@
       ok = res.ok;
       if (ok) {
         const data = await res.json().catch(function () { return {}; });
-        if (data && data.hotkey && data.hotkey !== store.settings.hotkey) {
-          /* 以助手实际配置为准，只提示，不偷偷改用户设置 */
+        if (data && data.hotkey) {
+          agentCfg.hotkey = data.hotkey;
+          agentCfg.hotkeyLabel = data.hotkeyLabel || data.hotkey;
+          if (typeof data.exitWhenPageCloses === "boolean") agentCfg.exitWhenPageCloses = data.exitWhenPageCloses;
+          if (data.pageIdleSeconds) agentCfg.pageIdleSeconds = data.pageIdleSeconds;
+          /* 以助手实际配置为准，同步到界面（不打扰用户） */
+          if (data.hotkey !== store.settings.hotkey) {
+            store.settings.hotkey = data.hotkey;
+            save();
+            if (route.name === "settings") render();
+          }
         }
       }
     } catch (e) { ok = false; }
     clearTimeout(timer);
     const changed = ok !== agentOnline;
     agentOnline = ok;
-    if (changed) paintAgent();
-    if (manual) toast(ok ? "取词助手已连接" : "连不上助手：先双击 启动.bat，或确认端口 " + store.settings.agentPort, ok ? "good" : "warn");
+    if (changed) {
+      paintAgent();
+      if (route.name === "settings") render();
+    }
+    if (manual) toast(ok ? "取词助手已连接 · " + (agentCfg.hotkeyLabel || "") : "连不上助手：先双击 启动.bat，或确认端口 " + store.settings.agentPort, ok ? "good" : "warn");
     return ok;
   }
+
+  /* 把网页里的改动推给助手：立刻写进 agent_config.json 并生效 */
+  async function pushAgentConfig(patch) {
+    try {
+      const res = await fetch(agentBase() + "/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok || !data.ok) {
+        toast((data && data.message) || "助手没有接受这个设置", "warn");
+        return false;
+      }
+      if (data.hotkey) {
+        agentCfg.hotkey = data.hotkey;
+        agentCfg.hotkeyLabel = data.hotkeyLabel || data.hotkey;
+        store.settings.hotkey = data.hotkey;
+      }
+      if (typeof data.exitWhenPageCloses === "boolean") agentCfg.exitWhenPageCloses = data.exitWhenPageCloses;
+      save();
+      toast("已生效 · " + (data.message || "设置已保存"), "good");
+      render();
+      return true;
+    } catch (e) {
+      toast("连不上助手：先双击桌面图标启动它，再来改这里", "warn");
+      return false;
+    }
+  }
+
+  /* 页面心跳：助手靠它判断网页还在不在；关页面就退出 */
+  let pageBeat = null;
+  let byeSent = false;
+  function pagePing() {
+    fetch(agentBase() + "/api/page/ping?ts=" + Date.now(), { cache: "no-store" }).catch(function () { /* 助手没开就算了 */ });
+  }
+  function pageBye() {
+    if (byeSent) return;   /* pagehide 和 beforeunload 会一起触发，只报一次 */
+    byeSent = true;
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon(agentBase() + "/api/page/bye");
+      else fetch(agentBase() + "/api/page/bye", { method: "POST", keepalive: true });
+    } catch (e) { /* 页面正在卸载，失败也无所谓 */ }
+  }
+
 
   async function pollInbox() {
     if (!agentOnline) return;
@@ -2284,6 +2371,15 @@
         break;
       }
       case "agent-retry": pingAgent(true); break;
+      case "hotkey-apply": {
+        const inp = $("#setHotkeyCustom");
+        const val = (inp && inp.value || "").trim();
+        if (!val) { toast("先写一个组合键，比如 ctrl+alt+y", "warn"); break; }
+        pushAgentConfig({ hotkey: val }).then(function (ok) {
+          if (ok) { store.settings.hotkey = val; save(); }
+        });
+        break;
+      }
       case "confirm-ok": {
         const fn = pendingConfirm;
         pendingConfirm = null;
@@ -2397,7 +2493,8 @@
       t.value = store.settings.randomExtra; save(); toast("每日随机抽查：" + store.settings.randomExtra);
     }
     if (t.id === "setSpeak") { store.settings.autoSpeak = t.checked; save(); }
-    if (t.id === "setHotkey") { store.settings.hotkey = t.value; save(); toast("已记录偏好；请同步修改 tools/agent_config.json 并重启助手", "warn"); }
+    if (t.id === "setHotkey") { store.settings.hotkey = t.value; save(); pushAgentConfig({ hotkey: t.value }); }
+    if (t.id === "setExitOnClose") { pushAgentConfig({ exitWhenPageCloses: !!t.checked }); }
     if (t.id === "setDictRemote") {
       store.settings.dictRemote = !!t.checked;
       save();
@@ -2608,15 +2705,28 @@
     }
   })();
 
-  /* 助手心跳 + 收件箱 */
+  /* 助手心跳 + 收件箱 + 页面心跳 */
   let heartbeat = null;
+  let agentWired = false;
   function startAgentLoop() {
     pingAgent(false);
     if (heartbeat) clearInterval(heartbeat);
     heartbeat = setInterval(function () {
       pingAgent(false);
     }, 6000);
+    pagePing();
+    if (pageBeat) clearInterval(pageBeat);
+    pageBeat = setInterval(pagePing, 15000);
     setInterval(pollInbox, 1600);
+    if (!agentWired) {
+      agentWired = true;
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) pagePing();
+      });
+      window.addEventListener("pagehide", pageBye);
+      window.addEventListener("beforeunload", pageBye);
+      window.addEventListener("pageshow", function (e) { if (e.persisted) byeSent = false; });
+    }
   }
 
   /* ======================================================================
