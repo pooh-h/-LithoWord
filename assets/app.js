@@ -133,7 +133,11 @@
   let wordFilters = { q: "", status: "all", domain: "all", sort: "recent", source: "" };
   let lastWordsSig = "";
   let libTab = "cards";
+  let elQ = "";          // 元素搜索
+  let elCat = "all";     // 元素类别筛选
+  let elRank = "all";    // 常见度筛选：all / A / B / mine
   let agentOnline = false;
+  const PT = window.PTABLE || null;
   let lastTabAt = 0;
 
   function defaults() {
@@ -1229,6 +1233,164 @@
   }
 
   /* ======================================================================
+     元素周期表
+     ====================================================================== */
+  function elHave(e) {
+    return store.words.find(function (w) {
+      return norm(w.term) === norm(e.en) || norm(w.term) === norm(e.zh) || norm(w.term) === norm(e.sym);
+    });
+  }
+
+  function elementCell(e, on) {
+    const have = elHave(e);
+    const cls = ["el"];
+    if (!on) cls.push("off");
+    if (have) cls.push("mine");
+    if (e.rank === "A") cls.push("rk-a");
+    return '<button class="' + cls.join(" ") + '" data-act="el-open" data-el="' + e.z + '" ' +
+      'style="grid-area:' + e.p + "/" + e.g + ";--ec:" + e.color + '" ' +
+      'title="' + esc(e.sym + " · " + e.en + " · " + e.zh) + '">' +
+      '<i class="el-z">' + e.z + "</i>" +
+      '<b class="el-sym">' + esc(e.sym) + "</b>" +
+      '<span class="el-zh">' + esc(e.zh) + "</span>" +
+      '<em class="el-en">' + esc(e.en) + "</em>" +
+      (have ? '<i class="el-dot" title="已在生词本"></i>' : "") +
+      "</button>";
+  }
+
+  function periodicTableHTML(onFn) {
+    const cells = PT.elements.map(function (e) { return elementCell(e, onFn(e)); }).join("");
+    const marker = function (p, txt, sub) {
+      return '<div class="el-marker" style="grid-area:' + p + '/3"><b>' + txt + "</b><span>" + sub + "</span></div>";
+    };
+    return '<div class="ptable-scroll"><div class="ptable" id="ptable">' +
+      cells +
+      marker(6, "57–71", "镧系") + marker(7, "89–103", "锕系") +
+      '<div class="ptable-gap" style="grid-area:8/1/9/19"></div>' +
+      "</div></div>";
+  }
+
+  function viewElements() {
+    if (!PT) return '<div class="empty"><h3>元素数据未加载</h3><p>assets/data-elements.js 没有引入。</p></div>';
+    const q = elQ.trim();
+    const base = PT.search(q);
+    const inQuery = new Set(base.map(function (e) { return e.z; }));
+    const on = function (e) {
+      if (!inQuery.has(e.z)) return false;
+      if (elCat !== "all" && e.cat !== elCat) return false;
+      if (elRank === "A" && e.rank !== "A") return false;
+      if (elRank === "B" && e.rank !== "B") return false;
+      if (elRank === "mine" && !elHave(e)) return false;
+      return true;
+    };
+    const hitCount = PT.elements.filter(on).length;
+    const mineCount = PT.elements.filter(elHave).length;
+    const filtering = !!q || elCat !== "all" || elRank !== "all";
+
+    const rankChips = [["all", "全部 118"], ["A", "高频 " + PT.elements.filter(function (e) { return e.rank === "A"; }).length],
+      ["B", "常见 " + PT.elements.filter(function (e) { return e.rank === "B"; }).length],
+      ["mine", "已收录 " + mineCount]];
+    const catChips = [["all", "全部类别"]].concat(PT.CATS.map(function (c) { return [c.id, c.zh]; }));
+
+    return '<div class="sec-head" style="margin-top:16px"><h2>元素周期表</h2>' +
+      '<span class="sec-sub">118 个元素 · 英文名与音标 · 点开看地质与工业用法</span><span class="sec-rule"></span></div>' +
+
+      '<div class="elfilter">' +
+      '<div class="elsearch"><svg style="width:15px;height:15px"><use href="#i-search"/></svg>' +
+      '<input id="elQ" type="text" placeholder="搜元素：zinc / 锌 / Zn / 30" value="' + esc(elQ) + '" autocomplete="off" spellcheck="false">' +
+      (q ? '<button class="elclear" data-act="el-clear" title="清空">×</button>' : "") + "</div>" +
+      '<div class="wchips elchips">' + rankChips.map(function (r) {
+        return '<button class="wchip' + (elRank === r[0] ? " on" : "") + '" data-act="el-rank" data-rank="' + r[0] + '">' + r[1] + "</button>";
+      }).join("") + "</div>" +
+      '<div class="wchips elchips">' + catChips.map(function (c) {
+        return '<button class="wchip' + (elCat === c[0] ? " on" : "") + '" data-act="el-cat" data-cat="' + c[0] + '">' + c[1] + "</button>";
+      }).join("") + "</div>" +
+      "</div>" +
+
+      '<p class="count-note elcount">' + (filtering ? "筛选出 " + hitCount + " 个" : "全部 118 个元素") +
+      " · 格子里灰色小字是英文名，右上角数字是原子序数" + "</p>" +
+
+      periodicTableHTML(on) +
+
+      '<div class="el-legend">' + PT.CATS.map(function (c) {
+        return '<span class="el-key" style="--ec:' + c.color + '"><i></i>' + esc(c.zh) + " " + esc(c.en) + "</span>";
+      }).join("") + "</div>" +
+
+      '<div class="panel" style="margin-top:16px"><div class="panel-body">' +
+      '<p class="tiny muted" style="line-height:1.85;margin:0">' +
+      "用法：点任意格子打开右栏，里面有英文名、音标、朗读、地质与工业上的常见说法；点「收录进生词本」它会带着音标和释义进你的复习队列。" +
+      "格子右上角有蓝点表示这个词已经在生词本里。</p></div></div>";
+  }
+
+  function openElement(key) {
+    const e = PT && PT.get(key);
+    if (!e) return;
+    const have = elHave(e);
+    const groupTxt = e.p === 9 ? "镧系" : e.p === 10 ? "锕系" : e.g + " 族";
+    const periodTxt = e.p === 9 || e.p === 10 ? "第 6 / 7 周期（单独列出）" : "第 " + e.p + " 周期";
+    drawerWordId = null;
+    drawerLexTerm = null;
+    $("#drawer").innerHTML =
+      '<div class="drawer-head"><div class="dh-main">' +
+      '<div class="el-hero" style="--ec:' + e.color + '"><b>' + esc(e.sym) + "</b><span>" + esc(e.zh) + "</span></div>" +
+      "<h2>" + esc(e.en) + "</h2>" +
+      '<div class="ipa">' + esc(e.ipa) +
+      ' <button class="btn btn-sm btn-quiet" data-act="speak" data-term="' + esc(e.en) + '" data-audio="" style="padding:1px 6px"><svg style="width:14px;height:14px"><use href="#i-sound"/></svg>朗读</button></div>' +
+      '<div class="chips"><span class="chip" style="--dc:' + e.color + ";background:color-mix(in srgb," + e.color + " 12%,#fff);color:" + e.color + ";border-color:color-mix(in srgb," + e.color + " 30%,#fff)\">" + esc(e.catZh) + "</span>" +
+      '<span class="chip">' + esc(PT.ranks[e.rank]) + "</span>" +
+      '<span class="chip mono">' + esc(e.sym) + " · Z=" + e.z + "</span>" +
+      (have ? '<span class="chip ok">已在生词本</span>' : "") + "</div>" +
+      "</div><button class=\"icon-btn\" data-close aria-label=\"关闭\"><svg><use href=\"#i-close\"/></svg></button></div>" +
+      '<div class="drawer-body">' +
+      "<section><h4>Element · 元素</h4>" +
+      '<div class="kv"><span>英文名</span><span>' + esc(e.en) + "</span></div>" +
+      '<div class="kv"><span>音标</span><span>' + esc(e.ipa) + "</span></div>" +
+      '<div class="kv"><span>中文名</span><span>' + esc(e.zh) + "</span></div>" +
+      '<div class="kv"><span>符号 / 原子序数</span><span>' + esc(e.sym) + " / " + e.z + "</span></div>" +
+      '<div class="kv"><span>相对原子质量</span><span>' + esc(e.mass) + "</span></div>" +
+      '<div class="kv"><span>类别</span><span>' + esc(e.catZh) + " · " + esc((PT.CATS.filter(function (c) { return c.id === e.cat; })[0] || {}).en || "") + "</span></div>" +
+      '<div class="kv"><span>周期 / 族</span><span>' + esc(periodTxt) + " · " + esc(groupTxt) + "</span></div>" +
+      "</section>" +
+      "<section><h4>Geology · 地质与工业</h4><p style=\"font-size:13.5px;line-height:1.8\">" + esc(e.note) + "</p></section>" +
+      (e.words.length ? "<section><h4>Collocations · 常见搭配</h4><div class=\"roots\">" +
+        e.words.map(function (w) { return '<span class="root"><b>' + esc(w.en) + "</b><span>" + esc(w.zh) + "</span></span>"; }).join("") +
+        "</div></section>" : "") +
+      "</div>" +
+      '<div class="drawer-acts">' +
+      (have ? '<button class="btn btn-sm btn-primary" data-act="el-word" data-id="' + have.id + '">打开我的词条</button>'
+        : '<button class="btn btn-sm btn-primary" data-act="el-add" data-el="' + e.z + '"><svg style="width:15px;height:15px"><use href="#i-plus"/></svg>收录进生词本</button>') +
+      '<button class="btn btn-sm btn-quiet" data-act="copy" data-text="' + esc(e.sym + " " + e.en + " " + e.ipa + " " + e.zh) + '">复制</button>' +
+      "</div>";
+    openDrawer();
+  }
+
+  function addElement(key) {
+    const e = PT && PT.get(key);
+    if (!e) return;
+    const r = upsertWord(e.en, null);
+    if (r.error) { toast(r.error); return; }
+    const w = r.word;
+    if (!w.ipa) w.ipa = e.ipa;
+    w.element = { z: e.z, sym: e.sym, zh: e.zh, cat: e.cat };
+    if (!w.defZh) w.defZh = "n. " + e.zh + "（" + e.sym + "，原子序数 " + e.z + "，" + e.catZh + "）";
+    if (!w.defEn) w.defEn = "chemical element " + e.en + " (" + e.sym + "), atomic number " + e.z + ", atomic mass " + e.mass;
+    if (!w.domain || w.domain === "academic") {
+      w.domain = "geochem";
+      w.scene = "method";
+      w.clsConf = 0.5;
+      w.clsReason = "元素周期表：" + e.catZh + " · " + e.sym;
+    }
+    if (!(w.collocations || []).length) w.collocations = e.words.map(function (x) { return x.en; }).slice(0, 3);
+    w.updatedAt = nowISO();
+    save();
+    closeDrawer();
+    render();
+    openWord(w.id);
+    toast("已收录 " + e.en + " · " + e.zh + " · 已带音标和释义", "good");
+    enrichWord(w);
+  }
+
+  /* ======================================================================
      文献
      ====================================================================== */
   function viewSources() {
@@ -1807,6 +1969,7 @@
     review: ["SESSION · 记忆载物台", "复习"],
     words: ["CATALOGUE · 标本册", "生词本"],
     library: ["REFERENCE · 词库", "词库与领域"],
+    elements: ["PERIODIC TABLE · 元素", "元素周期表"],
     sources: ["PROVENANCE · 语境", "文献来源"],
     settings: ["SETTINGS · 台面", "设置"]
   };
@@ -1868,6 +2031,7 @@
     else if (route.name === "review") html = viewReview();
     else if (route.name === "words") html = viewWords();
     else if (route.name === "library") html = viewLibrary();
+    else if (route.name === "elements") html = viewElements();
     else if (route.name === "sources") html = viewSources();
     else if (route.name === "settings") html = viewSettings();
     else { location.hash = "#/today"; return; }
@@ -1929,6 +2093,12 @@
         setCardDiff(el.getAttribute("data-term"), Number(el.getAttribute("data-v")));
         break;
       }
+      case "el-open": openElement(el.getAttribute("data-el")); break;
+      case "el-cat": elCat = el.getAttribute("data-cat"); render(); break;
+      case "el-rank": elRank = el.getAttribute("data-rank"); render(); break;
+      case "el-clear": elQ = ""; render(); break;
+      case "el-add": addElement(el.getAttribute("data-el")); break;
+      case "el-word": closeDrawer(); openWord(el.getAttribute("data-id")); break;
       case "review-word": {
         const id = el.getAttribute("data-id");
         const w = store.words.find(function (x) { return x.id === id; });
@@ -2248,6 +2418,13 @@
     if (e.target.id === "wcardQ") {
       libQ = e.target.value;
       paintCards();
+    }
+    if (e.target.id === "elQ") {
+      const caret = e.target.selectionStart;
+      elQ = e.target.value;
+      render();
+      const box = document.getElementById("elQ");
+      if (box) { box.focus(); const p = Math.min(caret, box.value.length); box.setSelectionRange(p, p); }
     }
   });
 

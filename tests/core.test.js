@@ -13,6 +13,7 @@ require(path.join(root, "assets/data-mineral.js"));
 require(path.join(root, "assets/data-struct.js"));
 require(path.join(root, "assets/data-resource.js"));
 require(path.join(root, "assets/data-surface.js"));
+require(path.join(root, "assets/data-elements.js"));
 const Core = require(path.join(root, "assets/core.js"));
 const L = global.LITHO;
 
@@ -189,6 +190,71 @@ ok("按扩展名自动识别", () => {
 ok("sourceKey 优先 DOI", () => {
   assert.strictEqual(Core.sourceKey({ doi: "10.1/X", title: "A" }), "doi:10.1/x");
   assert.ok(Core.sourceKey({ title: "A title" }).startsWith("title:a title"));
+});
+
+console.log("\n— 元素周期表 —");
+const PT = global.PTABLE;
+ok("118 个元素", () => assert.strictEqual(PT.elements.length, 118));
+ok("原子序数 1–118 连续且唯一", () => {
+  const zs = PT.elements.map((e) => e.z).sort((a, b) => a - b);
+  zs.forEach((z, i) => assert.strictEqual(z, i + 1, "第 " + (i + 1) + " 个是 " + z));
+});
+ok("符号唯一", () => {
+  const seen = new Set();
+  PT.elements.forEach((e) => {
+    assert.ok(!seen.has(e.sym), "重复符号：" + e.sym);
+    seen.add(e.sym);
+  });
+});
+ok("每个元素都有英文名、中文名、音标", () => {
+  PT.elements.forEach((e) => {
+    assert.ok(e.en && /^[a-z]+$/.test(e.en), "英文名异常：" + e.z + " / " + e.en);
+    assert.ok(e.zh, "缺中文名：" + e.z);
+    assert.ok(/^\/.+\/$/.test(e.ipa), "音标格式异常：" + e.z + " / " + e.ipa);
+  });
+});
+ok("周期表坐标合法且不重叠", () => {
+  const used = new Set();
+  PT.elements.forEach((e) => {
+    assert.ok(e.g >= 1 && e.g <= 18, "列号越界：" + e.sym + " → " + e.g);
+    assert.ok((e.p >= 1 && e.p <= 7) || e.p === 9 || e.p === 10, "行号越界：" + e.sym + " → " + e.p);
+    const key = e.p + ":" + e.g;
+    assert.ok(!used.has(key), "格子重叠：" + e.sym + " @ " + key);
+    used.add(key);
+  });
+});
+ok("镧系 15 个、锕系 15 个", () => {
+  assert.strictEqual(PT.elements.filter((e) => e.p === 9).length, 15);
+  assert.strictEqual(PT.elements.filter((e) => e.p === 10).length, 15);
+});
+ok("类别 id 全部合法", () => {
+  const ids = new Set(PT.CATS.map((c) => c.id));
+  PT.elements.forEach((e) => assert.ok(ids.has(e.cat), "未知类别：" + e.sym + " → " + e.cat));
+});
+ok("常见度分级覆盖", () => {
+  assert.ok(PT.elements.filter((e) => e.rank === "A").length >= 40, "高频元素太少");
+  PT.elements.forEach((e) => assert.ok("ABC".includes(e.rank), "未知分级：" + e.sym));
+});
+ok("按符号 / 英文 / 中文 / 序号都能取到", () => {
+  assert.strictEqual(PT.get("Zn").en, "zinc");
+  assert.strictEqual(PT.get("zinc").sym, "Zn");
+  assert.strictEqual(PT.get("锌").sym, "Zn");
+  assert.strictEqual(PT.get(30).sym, "Zn");
+  assert.strictEqual(PT.get("Cu").zh, "铜");
+  assert.strictEqual(PT.get("nope"), null);
+});
+ok("搜索：中文、符号、英文前缀", () => {
+  assert.deepStrictEqual(PT.search("锌").map((e) => e.sym), ["Zn"]);
+  assert.ok(PT.search("cu").some((e) => e.sym === "Cu"));
+  assert.ok(PT.search("zirc").some((e) => e.sym === "Zr"));
+  assert.strictEqual(PT.search("").length, 118);
+});
+ok("每个元素都有地质·工业说明和至少一条搭配", () => {
+  PT.elements.forEach((e) => {
+    assert.ok(e.note && e.note.length >= 8, "说明太短：" + e.sym);
+    assert.ok(e.words.length >= 1, "缺搭配：" + e.sym);
+    assert.ok(e.words.every((w) => w.en && w.zh), "搭配字段缺失：" + e.sym);
+  });
 });
 
 console.log("\n— 结果 —");
